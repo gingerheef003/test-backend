@@ -12,7 +12,7 @@ export class Application extends BaseEntity {
     id!: number
 
     @Field(type => User)
-    @ManyToOne(() => User, (user: User) => user.application)
+    @ManyToOne(() => User, (user: User) => user.applicationFrom)
     user!: User
 
     @Field(type => Department)

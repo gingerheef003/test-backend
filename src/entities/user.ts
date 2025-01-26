@@ -41,6 +41,6 @@ export class User extends BaseEntity {
 
     @Field(type => [Application], { nullable: true })
     @OneToMany(() => Application, (application: Application) => application.user)
-    application?: Application[]
+    applicationFrom?: Application[]
 }
 

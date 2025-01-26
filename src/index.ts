@@ -21,58 +21,66 @@ import { adminUsers } from "./utils/admin"
 
 
 dotenv.config()
-const PORT = process.env.PORT;
+if(!process.env.DATABASE_URI || !process.env.PORT) {
+    throw new Error('Environment Variables not set')
+}
+const PORT = process.env.PORT
 
 const corsOrigin = [ 'https://studio.apollographql.com', 'http://localhost:3000', 'https://app.shaastra.org', 'https://api.app.shaastra.org' ]
  
 async function bootstrap () {
-    const schema = await buildSchema({
-        resolvers,
-        authChecker,
-        validate: { forbidUnknownValues: false },
-    })
-    const app = express();
-    const httpServer = http.createServer(app)
-    const server = new ApolloServer({
-        schema,
-        plugins: [ApolloServerPluginDrainHttpServer({httpServer})]
-    })
-    await server.start();
-    app.use(
-        '/graphql',
-        cors<cors.CorsRequest>({
-            origin: corsOrigin,
-            credentials: true
-        }),
-        json(),
-        expressMiddleware(server, {
-            context: async ( { req, res } : { req: express.Request, res: express.Response } ) => {
-                let user: any;
-                let dep;
-                if (req.headers.cookie) {
-                    const token = req.headers.cookie.split("token=")[1]
-                    if (token) {
-                        const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret") as any;
-                        user = await User.findOne({ where: { id: decoded.id }, relations: ["application"] })
-                        if (user?.role == Role.CORE) {
-                            await Promise.all(
-                                adminUsers.map(async (el) => {
-                                    if(el.cores.includes(user.rollno)) {
-                                        dep = await Department.findOne({where: {name: el.department}, relations: ["application"] })
-                                    }
-                                })
-                            )
+    try {
+
+        const schema = await buildSchema({
+            resolvers,
+            authChecker,
+            validate: { forbidUnknownValues: false },
+        })
+        const app = express();
+        const httpServer = http.createServer(app)
+        const server = new ApolloServer({
+            schema,
+            plugins: [ApolloServerPluginDrainHttpServer({httpServer})]
+        })
+        await server.start();
+        app.use(
+            '/graphql',
+            cors<cors.CorsRequest>({
+                origin: corsOrigin,
+                credentials: true
+            }),
+            json(),
+            expressMiddleware(server, {
+                context: async ( { req, res } : { req: express.Request, res: express.Response } ) => {
+                    let user: User | null = null;
+                    let dep: Department | null = null;
+                    if (req.headers.cookie) {
+                        const token = req.headers.cookie.split("token=")[1]
+                        if (token) {
+                            const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret") as any;
+                            user = await User.findOne({ where: { id: decoded.id }, relations: ["application"] })
+                            if (user?.role == Role.CORE) {
+                                await Promise.all(
+                                    adminUsers.map(async (el) => {
+                                        if(el.cores.includes(user.rollno)) {
+                                            dep = await Department.findOne({where: {name: el.department}, relations: ["application"] })
+                                        }
+                                    })
+                                )
+                            }
                         }
                     }
-                }
-                if (dep) return { req, res, user, dep }
-                else return { req, res, user }
-            },
-        }),
-    )
-
-    await new Promise<void>((resolve) => httpServer.listen({ port: PORT }, resolve));
-    console.log(`Server ready at http://localhost:${PORT}/graphql`);
+                    if (dep) return { req, res, user, dep }
+                    else return { req, res, user }
+                },
+            }),
+        )
+    
+        await new Promise<void>((resolve) => httpServer.listen({ port: PORT }, resolve));
+        console.log(`Server ready at http://localhost:${PORT}/graphql`);
+    } catch (err) {
+        console.error('Error during Apollo Server initialization', err)
+    }
 
 }
 
@@ -80,7 +88,7 @@ const AppDataSource = new DataSource({
     type: "postgres",
     url: process.env.DATABASE_URI,
     logging: true,
-    synchronize: true,
+    synchronize: process.env.NODE_ENV !== "production",
     entities: entities,
     // ssl: true,
     // extra: {
